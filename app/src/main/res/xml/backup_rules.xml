@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and lower. Back up everything in app storage (settings + history DB). -->
+<full-backup-content>
+    <include domain="file" path="datastore/" />
+    <include domain="database" path="." />
+</full-backup-content>
