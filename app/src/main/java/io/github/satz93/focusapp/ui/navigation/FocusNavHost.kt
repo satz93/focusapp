@@ -35,6 +35,9 @@ import io.github.satz93.focusapp.ui.home.HomeScreen
 import io.github.satz93.focusapp.ui.home.HomeViewModel
 import io.github.satz93.focusapp.ui.onboarding.OnboardingPlaceholderStep
 import io.github.satz93.focusapp.ui.onboarding.OnboardingViewModel
+import io.github.satz93.focusapp.ui.onboarding.TopAppsScreen
+import io.github.satz93.focusapp.ui.onboarding.UnlocksScreen
+import io.github.satz93.focusapp.ui.onboarding.UsageAccessScreen
 import io.github.satz93.focusapp.ui.onboarding.WelcomeScreen
 import io.github.satz93.focusapp.ui.progress.ProgressScreen
 import io.github.satz93.focusapp.ui.theme.FocusColors
@@ -71,7 +74,7 @@ fun FocusNavHost() {
             onboardingGraph(nav)
 
             composable(Routes.HOME) {
-                val vm = appViewModel { HomeViewModel(it.settingsRepository) }
+                val vm = appViewModel { HomeViewModel(it.settingsRepository, it.usageRepository) }
                 HomeScreen(vm, onStartSession = { nav.navigate(Routes.FOCUS_TIMER) })
             }
             composable(Routes.PROGRESS) { ProgressScreen() }
@@ -99,25 +102,24 @@ private fun androidx.navigation.NavGraphBuilder.onboardingGraph(nav: NavHostCont
             WelcomeScreen(onGetStarted = { nav.navigate(Routes.USAGE_ACCESS) })
         }
         composable(Routes.USAGE_ACCESS) {
-            OnboardingPlaceholderStep(
-                step = 0,
-                title = "First, let's see your real numbers",
-                milestone = 2,
-                primaryText = "Allow usage access",
+            UsageAccessScreen(
+                vm = onboardingViewModel(nav),
                 onBack = { nav.popBackStack() },
-                onNext = { nav.navigate(Routes.UNLOCKS) },
+                onGranted = { nav.navigate(Routes.UNLOCKS) { launchSingleTop = true } },
             )
         }
         composable(Routes.UNLOCKS) {
-            OnboardingPlaceholderStep(
-                step = 1, title = "You unlock your phone N times a day", milestone = 2,
-                onBack = { nav.popBackStack() }, onNext = { nav.navigate(Routes.TOP_APPS) },
+            UnlocksScreen(
+                vm = onboardingViewModel(nav),
+                onBack = { nav.popBackStack() },
+                onNext = { nav.navigate(Routes.TOP_APPS) },
             )
         }
         composable(Routes.TOP_APPS) {
-            OnboardingPlaceholderStep(
-                step = 2, title = "Where your time goes", milestone = 2,
-                onBack = { nav.popBackStack() }, onNext = { nav.navigate(Routes.SCREEN_TIME_GOAL) },
+            TopAppsScreen(
+                vm = onboardingViewModel(nav),
+                onBack = { nav.popBackStack() },
+                onNext = { nav.navigate(Routes.SCREEN_TIME_GOAL) },
             )
         }
         composable(Routes.SCREEN_TIME_GOAL) {
@@ -151,7 +153,7 @@ private fun androidx.navigation.NavGraphBuilder.onboardingGraph(nav: NavHostCont
 @Composable
 private fun onboardingViewModel(nav: NavHostController): OnboardingViewModel {
     val parent = remember(nav) { nav.getBackStackEntry(Routes.ONBOARDING) }
-    return appViewModel(owner = parent) { OnboardingViewModel(it.settingsRepository) }
+    return appViewModel(owner = parent) { OnboardingViewModel(it.settingsRepository, it.usageRepository, it.appInfoProvider) }
 }
 
 @Composable

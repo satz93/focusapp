@@ -34,12 +34,23 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.satz93.focusapp.ui.components.FocusCard
 import io.github.satz93.focusapp.ui.theme.FocusColors
 import io.github.satz93.focusapp.ui.util.formatDuration
+import io.github.satz93.focusapp.ui.util.formatDurationMs
+import io.github.satz93.focusapp.data.settings.GuardConfig
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 @Composable
 fun HomeScreen(vm: HomeViewModel, onStartSession: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refresh() }
     val now = remember { LocalDateTime.now() }
     val greeting = when (now.hour) {
         in 5..11 -> "Good morning"
@@ -66,23 +77,17 @@ fun HomeScreen(vm: HomeViewModel, onStartSession: () -> Unit) {
         FocusHeroCard(state, onStartSession)
         Spacer(Modifier.height(12.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FocusCard(Modifier.weight(1f)) {
-                Text("Screen time", style = MaterialTheme.typography.bodySmall, color = FocusColors.TextSecondary)
-                Spacer(Modifier.height(6.dp))
-                Text("–", style = MaterialTheme.typography.titleLarge, color = FocusColors.Text)
-                Text(
-                    "of ${formatDuration(state.screenTimeGoalMin)} goal",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = FocusColors.TextSecondary,
-                )
-            }
-            FocusCard(Modifier.weight(1f)) {
-                Text("Pickups", style = MaterialTheme.typography.bodySmall, color = FocusColors.TextSecondary)
-                Spacer(Modifier.height(6.dp))
-                Text("–", style = MaterialTheme.typography.titleLarge, color = FocusColors.Text)
-                Text("so far today", style = MaterialTheme.typography.bodySmall, color = FocusColors.TextSecondary)
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.height(IntrinsicSize.Min)) {
+            ScreenTimeCard(state, Modifier.weight(1f).fillMaxHeight())
+            PickupsCard(state, Modifier.weight(1f).fillMaxHeight())
+        }
+        if (!state.hasUsageAccess) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Usage access is off, so screen time and pickups can\u2019t be shown.",
+                style = MaterialTheme.typography.bodySmall,
+                color = FocusColors.OverLimit,
+            )
         }
         Spacer(Modifier.height(12.dp))
         FocusCard(Modifier.fillMaxWidth()) {
@@ -95,6 +100,57 @@ fun HomeScreen(vm: HomeViewModel, onStartSession: () -> Unit) {
             )
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun ScreenTimeCard(state: HomeUiState, modifier: Modifier = Modifier) {
+    val goalMs = state.screenTimeGoalMin * 60_000L
+    val usedMs = state.today?.screenTimeMs
+    FocusCard(modifier) {
+        Text("Screen time", style = MaterialTheme.typography.bodySmall, color = FocusColors.TextSecondary)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            usedMs?.let { formatDurationMs(it) } ?: "\u2013",
+            style = MaterialTheme.typography.titleLarge,
+            color = FocusColors.Text,
+        )
+        Spacer(Modifier.height(8.dp))
+        val fraction = if (usedMs == null || goalMs <= 0) 0f else usedMs.toFloat() / goalMs
+        LinearProgressIndicator(
+            progress = { fraction.coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+            color = FocusColors.usage(fraction, GuardConfig.HOME_WARN_FRACTION),
+            trackColor = FocusColors.MutedFill,
+            strokeCap = StrokeCap.Round,
+            gapSize = 0.dp,
+            drawStopIndicator = {},
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "of ${formatDuration(state.screenTimeGoalMin)} goal",
+            style = MaterialTheme.typography.bodySmall,
+            color = FocusColors.TextSecondary,
+        )
+    }
+}
+
+@Composable
+private fun PickupsCard(state: HomeUiState, modifier: Modifier = Modifier) {
+    val today = state.today
+    FocusCard(modifier) {
+        Text("Pickups", style = MaterialTheme.typography.bodySmall, color = FocusColors.TextSecondary)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            if (today != null && today.unlocksAvailable) "${today.pickups}" else "\u2013",
+            style = MaterialTheme.typography.titleLarge,
+            color = FocusColors.Text,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text("so far today", style = MaterialTheme.typography.bodySmall, color = FocusColors.TextSecondary)
+        today?.avgPickups?.let {
+            Text("avg $it / day", style = MaterialTheme.typography.bodySmall, color = FocusColors.TextSecondary)
+        }
     }
 }
 

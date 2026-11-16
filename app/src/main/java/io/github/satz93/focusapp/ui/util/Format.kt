@@ -16,3 +16,6 @@ fun formatClock(totalSeconds: Long): String {
     val s = totalSeconds.coerceAtLeast(0)
     return "%d:%02d".format(s / 60, s % 60)
 }
+
+/** 6_720_000 ms -> "1h 52m"; under a minute -> "0m". */
+fun formatDurationMs(ms: Long): String = formatDuration((ms / 60_000L).toInt())

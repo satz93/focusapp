@@ -7,14 +7,11 @@ no network permission. Everything stays on the phone.
 ## Getting the APK
 
 Every push runs the **Build APK** workflow (`.github/workflows/build.yml`).
-Open the repo's **Actions** tab, pick the latest run, and download from **Artifacts**:
-
-- `focusapp-debug-N`: debug build
-- `focusapp-release-N`: smaller, minified build (recommended)
+Open the repo's **Actions** tab, pick the latest run, and download `focusapp-N` from **Artifacts**.
 
 Unzip it and install the `.apk` on your phone (allow "Install unknown apps" for your browser or file manager).
-Both builds share one application ID and are signed with the committed `app/debug.keystore`, so a new build
-installs over the old one and keeps your data. That key isn't secret, which is fine for personal sideloading.
+Builds are signed with the committed `app/debug.keystore`, so a new build installs over the old one and keeps
+your data. That key isn't secret, which is fine for personal sideloading.
 A Play Store release would need its own private upload key.
 
 ## Tech
@@ -39,7 +36,7 @@ app/src/main/java/io/github/satz93/focusapp/
 | # | Milestone | Status |
 |---|-----------|--------|
 | 1 | Project setup, theme/tokens, navigation skeleton, DataStore settings, CI APK build | Done |
-| 2 | Usage access permission, unlock + per-app usage queries, onboarding 1–4 with real data | |
+| 2 | Usage access permission, unlock + per-app usage queries, onboarding 1–4 with real data | Done |
 | 3 | Onboarding 5–7 (goal, focus target, distracting apps), saving settings | |
 | 4 | Home with live data, focus timer (foreground service + notification), session logging, session complete | |
 | 5 | Accessibility service: foreground-app detection, notch timer overlay, limit-reached sheet (nudge/lock) | |
@@ -57,11 +54,21 @@ so the whole flow can be clicked through from milestone 1 onward.
 - **No pickup/unlock limit.** Unlocks are shown for awareness only, as the brief says.
 - **Open questions are constants** in `GuardConfig`: challenge wait escalation (30s → 60s → 2 min per day),
   "End session early" also needs the challenge (yes), 5-minute unlock, waking hours (16).
+- **Unlock counting** (`data/usage/UsageMath.kt`): counts `KEYGUARD_HIDDEN` events (the lock screen
+  was dismissed), which matches "pickups" and ignores the screen waking for notifications. Phones with no
+  lock screen have no keyguard events, so it falls back to `SCREEN_INTERACTIVE`. Both need Android 9+;
+  on Android 8 unlocks show as unavailable.
+- **App time** comes from activity resume/pause events, closed when the screen turns off. The home screen,
+  System UI and this app are excluded from "phone time".
+- **Averages** use the last 7 full days with data (Android keeps detailed events for roughly a week).
+  On a phone with no history yet, onboarding shows today so far.
+- **Day parts**: morning 05:00–11:59, afternoon 12:00–16:59, evening 17:00–04:59.
 - **Auto Backup** includes DataStore settings and the Room database (`res/xml/*backup*`).
 
 ## Play Store policy note
 
-The app will use an **AccessibilityService** to detect which app is in the foreground and to draw overlays,
+The app uses **QUERY_ALL_PACKAGES** to show app names and icons; Play only allows that for certain app types.
+It will also use an **AccessibilityService** to detect which app is in the foreground and to draw overlays,
 plus the **Usage Access** special permission. That's fine for personal sideloaded use. Google Play restricts
 Accessibility API use to apps whose core purpose is helping people with disabilities, unless the app goes
 through a declaration and review process, so a Play release would need either that review or a switch to
