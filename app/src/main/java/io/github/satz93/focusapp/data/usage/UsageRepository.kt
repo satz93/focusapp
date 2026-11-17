@@ -58,6 +58,23 @@ class UsageRepository(
         aggregate(begin, System.currentTimeMillis(), zone)[today] ?: DayUsage(today)
     }
 
+    /** Per-day usage for an inclusive date range (only as far back as Android keeps events). */
+    suspend fun loadDays(from: LocalDate, to: LocalDate): Map<LocalDate, DayUsage> = withContext(Dispatchers.Default) {
+        val zone = ZoneId.systemDefault()
+        val begin = from.atStartOfDay(zone).toInstant().toEpochMilli()
+        val end = minOf(System.currentTimeMillis(), to.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli())
+        if (end <= begin) emptyMap() else aggregate(begin, end, zone)
+    }
+
+    /**
+     * Pickups between two moments (e.g. during a focus session). Looks back a day before [from]
+     * only to decide whether this phone reports lock-screen events.
+     */
+    suspend fun countUnlocks(from: Long, to: Long): Int = withContext(Dispatchers.Default) {
+        if (!hasUsageAccess() || !unlocksAvailable || to <= from) return@withContext 0
+        UsageMath.countUnlocks(readEvents(from - 24 * 60 * 60_000L, to), from, to)
+    }
+
     private fun aggregate(begin: Long, end: Long, zone: ZoneId): Map<LocalDate, DayUsage> {
         if (!hasUsageAccess()) return emptyMap()
         val events = readEvents(begin, end)

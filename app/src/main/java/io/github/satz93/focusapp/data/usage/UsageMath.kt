@@ -160,6 +160,13 @@ object UsageMath {
         )
     }
 
+    /** Unlocks inside [from, to], using the same keyguard-or-screen-on rule as [aggregate]. */
+    fun countUnlocks(events: List<RawEvent>, from: Long, to: Long): Int {
+        val type = if (events.any { it.type == EventType.KEYGUARD_HIDDEN }) EventType.KEYGUARD_HIDDEN
+        else EventType.SCREEN_INTERACTIVE
+        return events.count { it.type == type && it.time in from..to }
+    }
+
     /** "That's once every X minutes you're awake." Null when there are no unlocks. */
     fun minutesBetweenUnlocks(avgUnlocks: Int, wakingHours: Int): Int? =
         if (avgUnlocks <= 0) null else maxOf(1, Math.round(wakingHours * 60f / avgUnlocks))

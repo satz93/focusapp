@@ -30,6 +30,10 @@ import androidx.navigation.compose.rememberNavController
 import io.github.satz93.focusapp.FocusApplication
 import io.github.satz93.focusapp.ui.appViewModel
 import io.github.satz93.focusapp.ui.focus.FocusTimerScreen
+import io.github.satz93.focusapp.ui.focus.FocusTimerViewModel
+import io.github.satz93.focusapp.ui.focus.SessionCompleteViewModel
+import io.github.satz93.focusapp.ui.progress.ProgressViewModel
+import androidx.compose.runtime.LaunchedEffect
 import io.github.satz93.focusapp.ui.focus.SessionCompleteScreen
 import io.github.satz93.focusapp.ui.home.HomeScreen
 import io.github.satz93.focusapp.ui.home.HomeViewModel
@@ -44,7 +48,7 @@ import io.github.satz93.focusapp.ui.theme.FocusColors
 import kotlinx.coroutines.flow.first
 
 @Composable
-fun FocusNavHost() {
+fun FocusNavHost(requestedRoute: String? = null, onRouteHandled: () -> Unit = {}) {
     val context = LocalContext.current
     val settingsRepo = remember { (context.applicationContext as FocusApplication).container.settingsRepository }
 
@@ -74,25 +78,67 @@ fun FocusNavHost() {
             onboardingGraph(nav)
 
             composable(Routes.HOME) {
-                val vm = appViewModel { HomeViewModel(it.settingsRepository, it.usageRepository) }
-                HomeScreen(vm, onStartSession = { nav.navigate(Routes.FOCUS_TIMER) })
+                val vm = appViewModel {
+                    HomeViewModel(it.settingsRepository, it.usageRepository, it.database.focusSessionDao(), it.focusSessionManager)
+                }
+                HomeScreen(
+                    vm,
+                    onStartSession = { nav.navigate(Routes.FOCUS_TIMER) { launchSingleTop = true } },
+                    onShowComplete = { nav.navigate(Routes.SESSION_COMPLETE) { launchSingleTop = true } },
+                )
             }
-            composable(Routes.PROGRESS) { ProgressScreen() }
+            composable(Routes.PROGRESS) {
+                val vm = appViewModel {
+                    ProgressViewModel(it.database.focusSessionDao(), it.usageRepository, it.settingsRepository)
+                }
+                ProgressScreen(vm)
+            }
             composable(Routes.FOCUS_TIMER) {
+                val vm = appViewModel {
+                    FocusTimerViewModel(it.focusSessionManager, it.settingsRepository, it.database.focusSessionDao(), it.appScope)
+                }
                 FocusTimerScreen(
-                    onClose = { nav.popBackStack() },
+                    vm = vm,
+                    onClose = { if (!nav.popBackStack()) nav.navigate(Routes.HOME) },
                     onComplete = {
-                        nav.navigate(Routes.SESSION_COMPLETE) { popUpTo(Routes.HOME) }
+                        nav.navigate(Routes.SESSION_COMPLETE) {
+                            popUpTo(Routes.HOME)
+                            launchSingleTop = true
+                        }
                     },
+                    onEndedEarly = { nav.popBackStack(Routes.HOME, inclusive = false) },
                 )
             }
             composable(Routes.SESSION_COMPLETE) {
+                val context = LocalContext.current
+                val vm = appViewModel {
+                    SessionCompleteViewModel(it.focusSessionManager, it.database.focusSessionDao(), it.settingsRepository, context)
+                }
                 SessionCompleteScreen(
-                    onStartNext = { nav.navigate(Routes.FOCUS_TIMER) { popUpTo(Routes.HOME) } },
+                    vm = vm,
+                    onStartNext = {
+                        nav.navigate(Routes.FOCUS_TIMER) {
+                            popUpTo(Routes.HOME)
+                            launchSingleTop = true
+                        }
+                    },
                     onBackHome = { nav.popBackStack(Routes.HOME, inclusive = false) },
                 )
             }
         }
+    }
+
+    // Notification taps: open the timer or the session-complete screen (only once set up).
+    LaunchedEffect(requestedRoute) {
+        val route = requestedRoute ?: return@LaunchedEffect
+        val current = nav.currentDestination?.route.orEmpty()
+        if (!current.startsWith(Routes.ONBOARDING) && current != route) {
+            nav.navigate(route) {
+                popUpTo(Routes.HOME)
+                launchSingleTop = true
+            }
+        }
+        onRouteHandled()
     }
 }
 

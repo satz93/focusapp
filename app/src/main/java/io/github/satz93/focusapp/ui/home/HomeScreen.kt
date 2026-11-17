@@ -44,12 +44,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.setValue
+import io.github.satz93.focusapp.ui.util.formatClock
+import kotlinx.coroutines.delay
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun HomeScreen(vm: HomeViewModel, onStartSession: () -> Unit) {
+fun HomeScreen(vm: HomeViewModel, onStartSession: () -> Unit, onShowComplete: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val pendingComplete by vm.pendingComplete.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingComplete) { if (pendingComplete != null) onShowComplete() }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refresh() }
     val now = remember { LocalDateTime.now() }
     val greeting = when (now.hour) {
@@ -156,6 +163,16 @@ private fun PickupsCard(state: HomeUiState, modifier: Modifier = Modifier) {
 
 @Composable
 private fun FocusHeroCard(state: HomeUiState, onStartSession: () -> Unit) {
+    val active = state.active
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(active) {
+        while (active != null && !active.isPaused) {
+            now = System.currentTimeMillis()
+            delay(500)
+        }
+        now = System.currentTimeMillis()
+    }
+
     FocusCard(
         modifier = Modifier.fillMaxWidth(),
         color = FocusColors.Text,
@@ -163,38 +180,36 @@ private fun FocusHeroCard(state: HomeUiState, onStartSession: () -> Unit) {
         contentPadding = 16.dp,
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Focus sessions today", style = MaterialTheme.typography.bodySmall, color = FocusColors.OnDark)
+            Text(
+                if (active != null) "Focus session in progress" else "Focus sessions today",
+                style = MaterialTheme.typography.bodySmall,
+                color = FocusColors.OnDark,
+            )
             Spacer(Modifier.weight(1f))
             Text(
-                "${state.sessionLengthMin} min each",
+                "${active?.plannedMin ?: state.sessionLengthMin} min" + if (active == null) " each" else "",
                 style = MaterialTheme.typography.bodySmall,
                 color = FocusColors.OnDarkSecondary,
             )
         }
         Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text("${state.sessionsDone}", style = MaterialTheme.typography.displaySmall, color = FocusColors.OnDark)
-            Spacer(Modifier.width(6.dp))
-            Text(
-                "of ${state.sessionsTarget} done",
-                style = MaterialTheme.typography.bodyMedium,
-                color = FocusColors.OnDarkSecondary,
-                modifier = Modifier.padding(bottom = 4.dp),
-            )
-            Spacer(Modifier.weight(1f))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 6.dp)) {
-                repeat(state.sessionsTarget) { i ->
-                    val done = i < state.sessionsDone
-                    Box(
-                        Modifier
-                            .size(18.dp)
-                            .then(
-                                if (done) Modifier.background(FocusColors.AccentOnDark, CircleShape)
-                                else Modifier.border(1.5.dp, FocusColors.OnDarkSecondary, CircleShape),
-                            ),
-                    )
-                }
+        if (active != null) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    formatClock((active.remainingMs(now) + 999) / 1000),
+                    style = MaterialTheme.typography.displaySmall,
+                    color = FocusColors.OnDark,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (active.isPaused) "paused" else "left",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = FocusColors.OnDarkSecondary,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
             }
+        } else {
+            SessionsDoneRow(state)
         }
         Spacer(Modifier.height(16.dp))
         Button(
@@ -208,8 +223,60 @@ private fun FocusHeroCard(state: HomeUiState, onStartSession: () -> Unit) {
         ) {
             Icon(Icons.Outlined.Timer, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Start session ${state.sessionsDone + 1}", style = MaterialTheme.typography.labelLarge)
+            Text(
+                if (active != null) "Back to session" else "Start session ${state.sessionsDone + 1}",
+                style = MaterialTheme.typography.labelLarge,
+            )
         }
     }
 }
 
+/** "2 of 3 done" with dots. Sessions beyond the target add extra dots; there's no cap. */
+@Composable
+private fun SessionsDoneRow(state: HomeUiState) {
+    val done = state.sessionsDone
+    val target = state.sessionsTarget
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text("$done", style = MaterialTheme.typography.displaySmall, color = FocusColors.OnDark)
+        Spacer(Modifier.width(6.dp))
+        Column(Modifier.padding(bottom = 4.dp)) {
+            if (done >= target) {
+                Text(
+                    if (done == target) "Target hit" else "Target hit \u00b7 ${done - target} extra",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = FocusColors.AccentOnDark,
+                )
+            }
+            Text("of $target done", style = MaterialTheme.typography.bodyMedium, color = FocusColors.OnDarkSecondary)
+        }
+        Spacer(Modifier.weight(1f))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(bottom = 6.dp, start = 8.dp),
+        ) {
+            val dots = maxOf(done, target)
+            val shown = minOf(dots, 8)
+            repeat(shown) { i ->
+                Box(
+                    Modifier
+                        .size(16.dp)
+                        .then(
+                            if (i < done) Modifier.background(FocusColors.AccentOnDark, CircleShape)
+                            else Modifier.border(1.5.dp, FocusColors.OnDarkSecondary, CircleShape),
+                        ),
+                )
+            }
+            if (dots > shown) {
+                Text("+${dots - shown}", style = MaterialTheme.typography.bodySmall, color = FocusColors.AccentOnDark)
+            }
+        }
+    }
+    if (state.focusTodayMs > 0) {
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "${formatDurationMs(state.focusTodayMs)} focused today",
+            style = MaterialTheme.typography.bodySmall,
+            color = FocusColors.OnDarkSecondary,
+        )
+    }
+}
